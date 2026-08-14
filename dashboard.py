@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -63,6 +64,123 @@ METRIC_DETAILS = [
 
 def _metric(evaluation, field_name: str) -> Optional[object]:
     return getattr(evaluation, field_name, None)
+
+
+def _render_charts(sorted_evals: List) -> None:
+    st.header("Charts")
+
+    summary_cols = st.columns(min(3, len(sorted_evals)))
+    for i, evaluation in enumerate(sorted_evals[:3]):
+        delta = None
+        if i > 0:
+            leader = sorted_evals[0].overall_score or 0
+            delta = round((evaluation.overall_score or 0) - leader, 2)
+        summary_cols[i].metric(
+            evaluation.model_name,
+            f"{evaluation.overall_score}",
+            delta=None if delta is None else f"{delta} vs leader",
+        )
+
+    overall_df = pd.DataFrame(
+        [
+            {"Model": e.model_name, "Overall": e.overall_score or 0}
+            for e in sorted_evals
+        ]
+    )
+    overall_chart = (
+        alt.Chart(overall_df)
+        .mark_bar()
+        .encode(
+            x=alt.X("Model:N", sort="-y", title="Model"),
+            y=alt.Y("Overall:Q", title="Overall score", scale=alt.Scale(domain=[0, 5])),
+            color=alt.Color("Model:N", legend=None),
+            tooltip=["Model", "Overall"],
+        )
+        .properties(height=280, title="Overall score (1–5)")
+    )
+    st.altair_chart(overall_chart, use_container_width=True)
+
+    metric_rows = []
+    for evaluation in sorted_evals:
+        for label, field in METRIC_COLUMNS:
+            metric = _metric(evaluation, field)
+            if metric:
+                metric_rows.append(
+                    {"Model": evaluation.model_name, "Metric": label, "Score": metric.score}
+                )
+    if metric_rows:
+        metric_df = pd.DataFrame(metric_rows)
+        grouped = (
+            alt.Chart(metric_df)
+            .mark_bar()
+            .encode(
+                x=alt.X("Metric:N", sort=None, title="Metric"),
+                y=alt.Y("Score:Q", title="Score", scale=alt.Scale(domain=[0, 5])),
+                color=alt.Color("Model:N", title="Model"),
+                xOffset="Model:N",
+                tooltip=["Model", "Metric", "Score"],
+            )
+            .properties(height=340, title="Side-by-side metric scores (1–5)")
+        )
+        st.altair_chart(grouped, use_container_width=True)
+
+        heatmap = (
+            alt.Chart(metric_df)
+            .mark_rect()
+            .encode(
+                x=alt.X("Metric:N", title="Metric"),
+                y=alt.Y("Model:N", title="Model"),
+                color=alt.Color(
+                    "Score:Q",
+                    title="Score",
+                    scale=alt.Scale(domain=[1, 5], scheme="blues"),
+                ),
+                tooltip=["Model", "Metric", "Score"],
+            )
+            .properties(height=max(90, 70 * len(sorted_evals)), title="Score heatmap")
+        )
+        labels = (
+            alt.Chart(metric_df)
+            .mark_text()
+            .encode(x="Metric:N", y="Model:N", text="Score:Q")
+        )
+        st.altair_chart(heatmap + labels, use_container_width=True)
+
+    match_rows = []
+    for evaluation in sorted_evals:
+        for alignment in evaluation.alignments or []:
+            match_rows.append(
+                {"Model": evaluation.model_name, "Match": alignment.match_type}
+            )
+    if match_rows:
+        match_counts = (
+            pd.DataFrame(match_rows)
+            .groupby(["Model", "Match"])
+            .size()
+            .reset_index(name="Count")
+        )
+        stacked = (
+            alt.Chart(match_counts)
+            .mark_bar()
+            .encode(
+                x=alt.X("Model:N", title="Model"),
+                y=alt.Y("Count:Q", title="Stock intents"),
+                color=alt.Color(
+                    "Match:N",
+                    title="Match",
+                    scale=alt.Scale(
+                        domain=["semantic", "partial", "unmatched"],
+                        range=["#2A9D8F", "#E9C46A", "#E76F51"],
+                    ),
+                ),
+                tooltip=["Model", "Match", "Count"],
+            )
+            .properties(height=280, title="Stock intent match quality")
+        )
+        st.altair_chart(stacked, use_container_width=True)
+        st.caption(
+            "Semantic = strong title match. Partial = related. Unmatched = stock intent missing from the generated plan."
+        )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -198,6 +316,8 @@ elif run_clicked:
                     "Source coverage/fidelity appear when you provide an overall intent or source document. "
                     "Redundancy, unique STR, scope drift, and source fidelity are inverse (5 = none of the problem)."
                 )
+
+                _render_charts(sorted_evals)
 
                 st.subheader("Diagnostics")
                 diag_rows = []
