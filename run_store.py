@@ -34,7 +34,7 @@ def _secret(name: str) -> str:
     try:
         import streamlit as st
 
-        value = st.secrets.get(name)
+        value = st.secrets[name]
         if value is not None and str(value).strip():
             return str(value).strip()
     except Exception:

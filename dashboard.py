@@ -7,7 +7,6 @@ plans are compared head-to-head even with no stock file.
 """
 
 import logging
-import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,14 +15,6 @@ from typing import List, Optional
 import altair as alt
 import pandas as pd
 import streamlit as st
-
-# Streamlit keeps old project modules in memory across reruns. Drop them so
-# every run imports the files currently on disk (avoids stale ImportError).
-_PROJECT_ROOT = Path(__file__).resolve().parent
-_LOCAL_MODULES = {path.stem for path in _PROJECT_ROOT.glob("*.py")} - {"dashboard"}
-for _mod_name in list(sys.modules):
-    if _mod_name.split(".")[0] in _LOCAL_MODULES:
-        del sys.modules[_mod_name]
 
 from auth import render_logout, require_login
 from csv_parser import filter_plan_by_areas, ingest_and_parse_test_plan_csv, unique_areas

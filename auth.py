@@ -14,7 +14,7 @@ load_dotenv(Path(__file__).resolve().parent / ".env")
 
 def _from_secrets(name: str) -> str:
     try:
-        value = st.secrets.get(name)
+        value = st.secrets[name]
     except Exception:
         return ""
     if value is None:
