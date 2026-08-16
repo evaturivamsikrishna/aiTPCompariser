@@ -13,19 +13,23 @@ from typing_extensions import TypedDict
 
 # Weights must sum to 1.0. Inverse metrics (redundancy, uniqueness, scope drift): 5 = none of the problem.
 METRIC_WEIGHTS = {
-    "requirement_coverage": 0.14,
-    "match_confidence": 0.08,
-    "area_coverage": 0.08,
-    "source_coverage": 0.12,
-    "source_fidelity": 0.08,
-    "edge_case_quality": 0.08,
+    "requirement_coverage": 0.12,
+    "match_confidence": 0.07,
+    "area_coverage": 0.07,
+    "source_coverage": 0.11,
+    "source_fidelity": 0.07,
+    "peer_coverage": 0.10,
+    "edge_case_quality": 0.07,
     "actionability": 0.08,
-    "str_completeness": 0.10,
-    "expected_result_quality": 0.10,
+    "str_completeness": 0.09,
+    "expected_result_quality": 0.09,
     "redundancy": 0.05,
     "procedure_uniqueness": 0.04,
     "scope_drift": 0.03,
-    "traceability": 0.02,
+    "traceability": 0.01,
+    "llm_gdd_coverage": 0.14,
+    "llm_gdd_fidelity": 0.08,
+    "llm_tester_readiness": 0.08,
 }
 
 # --- Input and State Schemas ---
@@ -131,6 +135,7 @@ class ModelEvaluation(BaseModel):
     area_coverage: Optional[MetricScore] = None
     source_coverage: Optional[MetricScore] = None
     source_fidelity: Optional[MetricScore] = None
+    peer_coverage: Optional[MetricScore] = None
     edge_case_quality: Optional[MetricScore] = None
     actionability: Optional[MetricScore] = None
     str_completeness: Optional[MetricScore] = None
@@ -139,6 +144,11 @@ class ModelEvaluation(BaseModel):
     procedure_uniqueness: Optional[MetricScore] = None
     scope_drift: Optional[MetricScore] = None
     traceability: Optional[MetricScore] = None
+    llm_gdd_coverage: Optional[MetricScore] = None
+    llm_gdd_fidelity: Optional[MetricScore] = None
+    llm_tester_readiness: Optional[MetricScore] = None
+    llm_alignments: List[CoverageAlignment] = Field(default_factory=list)
+    llm_summary: Optional[str] = None
     diagnostics: Dict[str, Any] = Field(default_factory=dict)
     overall_score: Optional[float] = Field(
         None, description="The final weighted score for the generated plan.")
@@ -146,10 +156,13 @@ class ModelEvaluation(BaseModel):
 
     @model_validator(mode='after')
     def calculate_overall_score(self) -> 'ModelEvaluation':
+        self.recompute_overall_score()
+        return self
+
+    def recompute_overall_score(self) -> None:
         if self.error:
             self.overall_score = 0.0
-            return self
-
+            return
         weighted_score = 0.0
         present_weight = 0.0
         for field_name, weight in METRIC_WEIGHTS.items():
@@ -159,11 +172,85 @@ class ModelEvaluation(BaseModel):
             weighted_score += metric.score * weight
             present_weight += weight
         if present_weight == 0:
-            return self
+            return
         self.overall_score = round(weighted_score / present_weight, 2)
-        return self
+
+# --- Head-to-head comparison ---
+
+class ClusterMember(BaseModel):
+    model_name: str
+    case_id: str
+    title: str
+    area: Optional[str] = None
+
+
+class IntentCluster(BaseModel):
+    label: str
+    members: List[ClusterMember] = Field(default_factory=list)
+
+
+class PairwiseOverlap(BaseModel):
+    model_a: str
+    model_b: str
+    shared: int
+    union: int
+    jaccard: float
+
+
+class GddBeatCoverage(BaseModel):
+    beat_id: str
+    beat_text: str
+    origin: str = ""
+    covered_by: List[str] = Field(default_factory=list)
+    match_type: Literal["semantic", "partial", "unmatched"] = "unmatched"
+
+
+class CrossPlanComparison(BaseModel):
+    cluster_count: int = 0
+    consensus: List[IntentCluster] = Field(default_factory=list)
+    partial_overlap: List[IntentCluster] = Field(default_factory=list)
+    unique_by_model: Dict[str, List[IntentCluster]] = Field(default_factory=dict)
+    pairwise: List[PairwiseOverlap] = Field(default_factory=list)
+    gdd_beats: List[GddBeatCoverage] = Field(default_factory=list)
+    model_peer_ratios: Dict[str, float] = Field(default_factory=dict)
+    model_peer_notes: Dict[str, str] = Field(default_factory=dict)
+
 
 # --- CSV Parser Helper Schemas ---
+
+class ComparisonRunMeta(BaseModel):
+    """How a comparison was produced — filenames and filters, never API keys."""
+    model_names: List[str] = Field(default_factory=list)
+    gdd_filename: Optional[str] = None
+    stock_filename: Optional[str] = None
+    selected_areas: List[str] = Field(default_factory=list)
+    selected_gdd_origins: List[str] = Field(default_factory=list)
+    judge_backend: str = "off"
+    judge_model: str = ""
+    has_stock: bool = False
+    has_gdd: bool = False
+    overall_scores: Dict[str, float] = Field(default_factory=dict)
+
+
+class ComparisonRunSummary(BaseModel):
+    """Index row for the history sidebar."""
+    id: str
+    created_at: str
+    title: str
+    model_names: List[str] = Field(default_factory=list)
+    overall_scores: Dict[str, float] = Field(default_factory=dict)
+    judge_backend: str = "off"
+
+
+class ComparisonRun(BaseModel):
+    """A saved comparison entry (scores + mappings, not original CSV bytes)."""
+    id: str
+    created_at: str
+    title: str
+    meta: ComparisonRunMeta = Field(default_factory=ComparisonRunMeta)
+    evaluations: List[ModelEvaluation] = Field(default_factory=list)
+    cross: Optional[CrossPlanComparison] = None
+
 
 class ColumnMapping(BaseModel):
     """

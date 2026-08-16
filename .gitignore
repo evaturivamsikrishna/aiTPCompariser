@@ -6,3 +6,5 @@ __pycache__/
 *.csv
 *.txt
 !requirements.txt
+data/comparisons/*.json
+!data/comparisons/.gitkeep
