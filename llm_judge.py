@@ -56,10 +56,16 @@ class JudgeConfig:
     timeout_sec: int = 180
 
 
+def _on_streamlit_cloud() -> bool:
+    return Path("/mount/src").is_dir() or bool(os.environ.get("STREAMLIT_RUNTIME_ENV"))
+
+
 def probe_ollama(base_url: str = OLLAMA_URL) -> List[Dict[str, Any]]:
     """Return installed Ollama models, smallest first. Empty if daemon is down."""
+    if _on_streamlit_cloud():
+        return []
     try:
-        payload = _http_json("GET", f"{base_url}/api/tags", timeout=3)
+        payload = _http_json("GET", f"{base_url}/api/tags", timeout=2)
     except Exception:
         return []
     models = payload.get("models") or []
@@ -68,6 +74,14 @@ def probe_ollama(base_url: str = OLLAMA_URL) -> List[Dict[str, Any]]:
 
 
 def groq_key() -> str:
+    try:
+        import streamlit as st
+
+        value = st.secrets["GROQ_API_KEY"]
+        if value:
+            return str(value).strip()
+    except Exception:
+        pass
     return (os.environ.get("GROQ_API_KEY") or os.environ.get("GROQ_KEY") or "").strip()
 
 
