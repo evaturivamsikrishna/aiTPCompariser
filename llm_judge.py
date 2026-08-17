@@ -131,14 +131,6 @@ def groq_tpm_limit(model: str) -> int:
     return GROQ_MODEL_TPM.get(model or DEFAULT_GROQ_MODEL, 6_000)
 
 
-def groq_model_label(model: str) -> str:
-    tpm = groq_tpm_limit(model)
-    suffix = "recommended" if model == DEFAULT_GROQ_MODEL else f"{tpm // 1000}k TPM"
-    if model == DEFAULT_GROQ_MODEL:
-        suffix = f"{tpm // 1000}k TPM, recommended"
-    return f"{model}  ·  {suffix}"
-
-
 def _est_tokens(*parts: str) -> int:
     """Over-estimate prompt size so Groq TPM packing stays under the model cap."""
     chars = sum(len(part or "") for part in parts)

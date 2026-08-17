@@ -48,12 +48,13 @@ def require_login() -> None:
     if st.session_state.get("authenticated"):
         return
 
-    st.title("Sign in")
+    st.title("AI Test Plan Comparator")
+    st.subheader("Sign in")
     st.caption("This app is locked. Use the shared email and password.")
     with st.form("dashboard_login"):
         entered_email = st.text_input("Email")
         entered_password = st.text_input("Password", type="password")
-        submitted = st.form_submit_button("Sign in", use_container_width=True)
+        submitted = st.form_submit_button("Sign in", type="primary")
     if submitted:
         email_ok = hmac.compare_digest(entered_email.strip().lower(), email.lower())
         password_ok = hmac.compare_digest(entered_password.strip(), password)
@@ -68,6 +69,7 @@ def render_logout() -> None:
     email, password = auth_configured()
     if not (email and password and st.session_state.get("authenticated")):
         return
-    if st.sidebar.button("Log out", use_container_width=True):
+    st.sidebar.caption(f"Signed in as {email}")
+    if st.sidebar.button("Log out", type="secondary"):
         st.session_state["authenticated"] = False
         st.rerun()
